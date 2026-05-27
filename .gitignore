@@ -7,3 +7,5 @@ dist
 *.log
 data/local-db.json
 screenshots
+.env.local
+
