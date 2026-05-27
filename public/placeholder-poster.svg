@@ -1,0 +1,6 @@
+<svg width="500" height="750" viewBox="0 0 500 750" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="500" height="750" fill="#111827"/>
+  <rect x="52" y="70" width="396" height="610" rx="28" fill="#1f2937"/>
+  <path d="M187 313L334 375L187 437V313Z" fill="#f43f5e"/>
+  <text x="250" y="560" text-anchor="middle" fill="#94a3b8" font-family="Arial" font-size="34">NAMAN's MEDIA SERVER</text>
+</svg>

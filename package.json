@@ -1,0 +1,41 @@
+{
+  "name": "homeflix-local",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "dev:clean": "npm run stop && npm run clean && next dev -H 0.0.0.0 -p 3000",
+    "build": "next build",
+    "clean": "node scripts/clean-dev.mjs",
+    "stop": "node scripts/stop-port-3000.mjs",
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "description": "Self-hosted local network Netflix-style streaming app with modular iframe providers.",
+  "dependencies": {
+    "axios": "^1.16.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.39.0",
+    "hls.js": "^1.6.16",
+    "lucide-react": "^1.16.0",
+    "next": "^15.5.18",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tailwind-merge": "^3.6.0",
+    "zustand": "^5.0.13"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/node": "^22.19.19",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.5.18",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.9.3"
+  }
+}
