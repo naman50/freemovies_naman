@@ -1,8 +1,14 @@
-# HomeFlix Local
+# Naman's Web Server Local
 
 A self-hosted Netflix-style media streaming interface for a Windows PC and devices on the same home Wi-Fi network. It uses TMDB for metadata and posters, a local JSON database for personal state, and modular iframe provider builders for VidKing-style player URLs.
 
 This app is designed for private local network use only. It does not include downloading, scraping, torrenting, or content acquisition features.
+
+Later on added tunneling via cloufare to acess across diffent networks
+
+```powershell
+cloudflared tunnel --url http://localhost:3000 
+```
 
 ## Features
 
