@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Captions, Maximize, Play, RotateCw, Settings } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, Captions, Languages, Maximize, Play, RotateCw, Settings } from "lucide-react";
 import { useLibraryStore } from "@/store/library-store";
+import { buildVidKingUrl } from "@/providers/vidking";
 import type { MediaDetails } from "@/types/media";
 
 type PlayerShellProps = {
@@ -12,24 +14,100 @@ type PlayerShellProps = {
   providerBaseUrl?: string;
   season?: number;
   episode?: number;
+  initialLanguage?: string;
 };
 
-function buildOverrideUrl(baseUrl: string, mediaType: MediaDetails["mediaType"], id: string, season: number, episode: number) {
-  const cleanBaseUrl = baseUrl.replace(/\/$/, "");
-  if (mediaType === "tv") return `${cleanBaseUrl}/tv/${id}/${season}/${episode}`;
-  return `${cleanBaseUrl}/movie/${id}`;
+type LanguageOption = { code: string; label: string };
+
+const COMMON_LANGUAGE_OPTIONS: LanguageOption[] = [
+  { code: "en", label: "English" },
+  { code: "hi", label: "Hindi" },
+  { code: "ta", label: "Tamil" },
+  { code: "te", label: "Telugu" },
+  { code: "ml", label: "Malayalam" },
+  { code: "kn", label: "Kannada" },
+  { code: "bn", label: "Bengali" },
+  { code: "pa", label: "Punjabi" },
+  { code: "mr", label: "Marathi" },
+  { code: "gu", label: "Gujarati" },
+  { code: "es", label: "Spanish" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" }
+];
+
+function normalizeLanguage(language?: string | null) {
+  const normalized = language?.trim().toLowerCase();
+  if (!normalized || normalized === "auto") return "auto";
+  return /^[a-z]{2,3}(?:-[a-z0-9]{2,8})?$/.test(normalized) ? normalized : "auto";
 }
 
-export function PlayerShell({ details, embedUrl, providerBaseUrl = "https://www.vidking.net/embed", season = 1, episode = 1 }: PlayerShellProps) {
+function withLanguageParam(url: string, language: string) {
+  const normalized = normalizeLanguage(language);
+  if (normalized === "auto") return url;
+  try {
+    const parsed = new URL(url);
+    parsed.searchParams.set("lang", normalized);
+    parsed.searchParams.set("ds_lang", normalized);
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function labelFromCode(code: string) {
+  const displayNames = typeof Intl !== "undefined" && "DisplayNames" in Intl ? new Intl.DisplayNames(["en"], { type: "language" }) : null;
+  const match = displayNames?.of(code.split("-")[0]);
+  return match ? `${match} (${code})` : code.toUpperCase();
+}
+
+function buildLanguageOptions(details: MediaDetails) {
+  const options = new Map<string, string>();
+  options.set("auto", "Auto");
+  details.spokenLanguages?.forEach((language) => {
+    const code = normalizeLanguage(language.iso6391);
+    if (code !== "auto") options.set(code, language.englishName || language.name || labelFromCode(code));
+  });
+  COMMON_LANGUAGE_OPTIONS.forEach((language) => {
+    if (!options.has(language.code)) options.set(language.code, language.label);
+  });
+  return [...options.entries()].map(([code, label]) => ({ code, label }));
+}
+
+export function PlayerShell({ details, embedUrl, providerBaseUrl = "https://www.vidking.net/embed", season = 1, episode = 1, initialLanguage = "auto" }: PlayerShellProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [providerId, setProviderId] = useState(String(details.tmdbId));
-  const [activeEmbedUrl, setActiveEmbedUrl] = useState(embedUrl);
+  const [selectedLanguage, setSelectedLanguage] = useState(normalizeLanguage(initialLanguage));
+  const [activeEmbedUrl, setActiveEmbedUrl] = useState(withLanguageParam(embedUrl, selectedLanguage));
   const autoplay = useLibraryStore((state) => state.autoplay);
+  const preferredAudioLanguage = useLibraryStore((state) => state.preferredAudioLanguage);
   const toggleAutoplay = useLibraryStore((state) => state.toggleAutoplay);
+  const setPreferredAudioLanguage = useLibraryStore((state) => state.setPreferredAudioLanguage);
   const addHistory = useLibraryStore((state) => state.addHistory);
+  const languageOptions = useMemo(() => buildLanguageOptions(details), [details]);
 
-  const historyKey = useMemo(() => `${details.mediaType}-${details.tmdbId}-${season}-${episode}`, [details.mediaType, details.tmdbId, season, episode]);
+  const historyKey = useMemo(() => `${details.mediaType}-${details.tmdbId}`, [details.mediaType, details.tmdbId]);
+
+  useEffect(() => {
+    const languageFromUrl = normalizeLanguage(initialLanguage);
+    if (languageFromUrl !== "auto") {
+      setSelectedLanguage(languageFromUrl);
+      setPreferredAudioLanguage(languageFromUrl);
+      return;
+    }
+    setSelectedLanguage(normalizeLanguage(preferredAudioLanguage));
+  }, [initialLanguage, preferredAudioLanguage, setPreferredAudioLanguage]);
+
+  useEffect(() => {
+    setActiveEmbedUrl(withLanguageParam(embedUrl, selectedLanguage));
+    setLoading(true);
+    setFailed(false);
+  }, [embedUrl, selectedLanguage]);
 
   useEffect(() => {
     addHistory({
@@ -53,7 +131,30 @@ export function PlayerShell({ details, embedUrl, providerBaseUrl = "https://www.
     if (!providerId.trim()) return;
     setLoading(true);
     setFailed(false);
-    setActiveEmbedUrl(buildOverrideUrl(providerBaseUrl, details.mediaType, providerId.trim(), season, episode));
+    setActiveEmbedUrl(
+      buildVidKingUrl(
+        {
+          tmdbId: providerId.trim(),
+          mediaType: details.mediaType,
+          season,
+          episode,
+          language: selectedLanguage
+        },
+        providerBaseUrl
+      )
+    );
+  }
+
+  function updateLanguage(language: string) {
+    const normalized = normalizeLanguage(language);
+    setSelectedLanguage(normalized);
+    setPreferredAudioLanguage(normalized);
+
+    const params = new URLSearchParams(searchParams.toString());
+    if (normalized === "auto") params.delete("lang");
+    else params.set("lang", normalized);
+    const nextQuery = params.toString();
+    router.replace(`${pathname}${nextQuery ? `?${nextQuery}` : ""}`, { scroll: false });
   }
 
   return (
@@ -126,6 +227,20 @@ export function PlayerShell({ details, embedUrl, providerBaseUrl = "https://www.
             <Settings className="h-4 w-4" />
             Auto
           </button>
+          <label className="inline-flex items-center gap-2 rounded-md bg-white/10 px-3 py-2 text-sm font-semibold text-white" title="Preferred audio language">
+            <Languages className="h-4 w-4" />
+            <select
+              value={selectedLanguage}
+              onChange={(event) => updateLanguage(event.target.value)}
+              className="rounded bg-transparent text-sm text-white outline-none"
+            >
+              {languageOptions.map((option) => (
+                <option key={option.code} value={option.code} className="bg-zinc-900 text-white">
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button className="inline-flex items-center gap-2 rounded-md bg-white/10 px-4 py-2 text-sm font-semibold text-white" title="Subtitle selector">
             <Captions className="h-4 w-4" />
             Subtitles

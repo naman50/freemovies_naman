@@ -4,6 +4,7 @@ import { genreMap, mockTrending, mockTv } from "@/data/mock";
 
 type TmdbGenre = { id: number; name: string };
 type TmdbSeason = { season_number: number; episode_count: number; name: string };
+type TmdbSpokenLanguage = { iso_639_1: string; english_name?: string; name?: string };
 type TmdbItem = {
   id: number;
   imdb_id?: string | null;
@@ -30,7 +31,27 @@ type TmdbItem = {
   number_of_episodes?: number;
   genres?: TmdbGenre[];
   seasons?: TmdbSeason[];
+  spoken_languages?: TmdbSpokenLanguage[];
 };
+
+type TmdbCacheEntry = { expiresAt: number; value: unknown };
+
+class TmdbHttpError extends Error {
+  constructor(
+    message: string,
+    public readonly statusCode: number
+  ) {
+    super(message);
+  }
+}
+
+const CACHE_SIZE_LIMIT = 500;
+const REQUEST_TIMEOUT_MS = 12000;
+const RETRY_LIMIT = 3;
+const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+const DEFAULT_TTL_MS = 5 * 60 * 1000;
+const cache = new Map<string, TmdbCacheEntry>();
+const inFlightRequests = new Map<string, Promise<unknown>>();
 
 function apiKey() {
   return process.env.TMDB_API_KEY;
@@ -60,6 +81,32 @@ function normalize(item: TmdbItem, fallbackType?: MediaType): MediaItem {
   };
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldRetry(error: unknown) {
+  if (error instanceof TmdbHttpError) {
+    return RETRYABLE_STATUS_CODES.has(error.statusCode);
+  }
+  return error instanceof Error;
+}
+
+function cacheTtl(requestUrl: string) {
+  if (requestUrl.includes("/trending/")) return 10 * 60 * 1000;
+  if (requestUrl.includes("/genre/")) return 60 * 60 * 1000;
+  if (requestUrl.includes("/search/")) return 45 * 1000;
+  return DEFAULT_TTL_MS;
+}
+
+function setCache(cacheKey: string, value: unknown, ttl: number) {
+  if (cache.size >= CACHE_SIZE_LIMIT) {
+    const oldest = cache.keys().next().value;
+    if (oldest) cache.delete(oldest);
+  }
+  cache.set(cacheKey, { expiresAt: Date.now() + ttl, value });
+}
+
 async function get<T>(url: string, params: Record<string, string | number | undefined> = {}) {
   const key = apiKey();
   if (!key) throw new Error("TMDB_API_KEY is not configured");
@@ -74,12 +121,50 @@ async function get<T>(url: string, params: Record<string, string | number | unde
   });
 
   const requestUrl = `${baseUrl}${url}?${searchParams.toString()}`;
-  return getJson<T>(requestUrl);
+  const cacheKey = requestUrl;
+  const hit = cache.get(cacheKey);
+  if (hit && hit.expiresAt > Date.now()) {
+    return hit.value as T;
+  }
+  cache.delete(cacheKey);
+
+  const ongoing = inFlightRequests.get(cacheKey);
+  if (ongoing) return ongoing as Promise<T>;
+
+  const requestPromise = getJsonWithRetry<T>(requestUrl)
+    .then((value) => {
+      setCache(cacheKey, value, cacheTtl(requestUrl));
+      return value;
+    })
+    .finally(() => {
+      inFlightRequests.delete(cacheKey);
+    });
+
+  inFlightRequests.set(cacheKey, requestPromise);
+  return requestPromise;
+}
+
+async function getJsonWithRetry<T>(requestUrl: string): Promise<T> {
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (attempt < RETRY_LIMIT) {
+    try {
+      return await getJson<T>(requestUrl);
+    } catch (error) {
+      lastError = error;
+      attempt += 1;
+      if (attempt >= RETRY_LIMIT || !shouldRetry(error)) break;
+      await sleep(350 * attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 function getJson<T>(requestUrl: string): Promise<T> {
   return new Promise((resolve, reject) => {
-    const request = https.get(requestUrl, { timeout: 10000 }, (response) => {
+    const request = https.get(requestUrl, { timeout: REQUEST_TIMEOUT_MS }, (response) => {
       let body = "";
       response.setEncoding("utf8");
       response.on("data", (chunk) => {
@@ -87,7 +172,7 @@ function getJson<T>(requestUrl: string): Promise<T> {
       });
       response.on("end", () => {
         if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
-          reject(new Error(`TMDB request failed with ${response.statusCode ?? "unknown"}`));
+          reject(new TmdbHttpError(`TMDB request failed with ${response.statusCode ?? "unknown"}`, response.statusCode ?? 500));
           return;
         }
 
@@ -153,6 +238,11 @@ export async function getDetails(type: MediaType, id: string): Promise<MediaDeta
         seasonNumber: season.season_number,
         episodeCount: season.episode_count,
         name: season.name
+      })),
+      spokenLanguages: data.spoken_languages?.map((language) => ({
+        iso6391: language.iso_639_1,
+        englishName: language.english_name ?? language.name ?? language.iso_639_1.toUpperCase(),
+        name: language.name ?? language.english_name ?? language.iso_639_1.toUpperCase()
       }))
     };
   } catch (error) {

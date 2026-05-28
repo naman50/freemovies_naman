@@ -23,6 +23,7 @@ export type MediaDetails = MediaItem & {
   numberOfEpisodes?: number;
   genres?: { id: MediaId; name: string }[];
   seasons?: { seasonNumber: number; episodeCount: number; name: string }[];
+  spokenLanguages?: { iso6391: string; englishName: string; name: string }[];
 };
 
 export type WatchProgress = {

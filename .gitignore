@@ -1,11 +1,37 @@
-.next
-node_modules
-out
-dist
-.env
-.env*.local
-*.log
-data/local-db.json
-screenshots
-.env.local
+# Dependencies
+node_modules/
 
+# Next.js build output
+.next/
+out/
+
+# Build artifacts
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# App/local runtime data
+data/local-db.json
+screenshots/
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -17,21 +17,47 @@ export async function generateMetadata({ params }: { params: Promise<{ type: Med
   return { title: details?.title ?? "Details" };
 }
 
-export default async function DetailsPage({ params }: { params: Promise<{ type: MediaType; id: string }> }) {
-  const { type, id } = await params;
+function normalizeSeason(value?: string, fallback = 1) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric >= 0 ? numeric : fallback;
+}
+
+function sortSeasonsForDisplay(seasons: { seasonNumber: number; episodeCount: number; name: string }[]) {
+  return [...seasons].sort((a, b) => {
+    if (a.seasonNumber === 0 && b.seasonNumber !== 0) return 1;
+    if (b.seasonNumber === 0 && a.seasonNumber !== 0) return -1;
+    return a.seasonNumber - b.seasonNumber;
+  });
+}
+
+export default async function DetailsPage({
+  params,
+  searchParams
+}: {
+  params: Promise<{ type: MediaType; id: string }>;
+  searchParams: Promise<{ season?: string }>;
+}) {
+  const [{ type, id }, query] = await Promise.all([params, searchParams]);
   const details = await getDetails(type, id);
   if (!details) notFound();
+  const seasons =
+    details.mediaType === "tv"
+      ? sortSeasonsForDisplay((details.seasons ?? []).filter((season) => season.episodeCount > 0))
+      : [];
+  const defaultSeason = seasons.find((season) => season.seasonNumber > 0) ?? seasons[0];
+  const selectedSeasonNumber = normalizeSeason(query.season, defaultSeason?.seasonNumber ?? 1);
+  const selectedSeason = seasons.find((season) => season.seasonNumber === selectedSeasonNumber) ?? seasons[0];
 
   return (
     <AppShell>
       <section className="relative min-h-screen overflow-hidden">
         <Image src={tmdbImage(details.backdropPath, "original")} alt="" fill priority sizes="100vw" className="object-cover opacity-45" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#050609] via-[#050609]/80 to-black/50" />
-        <div className="relative z-10 grid gap-8 px-5 py-24 md:grid-cols-[280px_1fr] md:px-10">
-          <div className="relative aspect-[2/3] overflow-hidden rounded-lg bg-zinc-900 shadow-2xl shadow-black/40">
+        <div className="relative z-10 grid gap-8 px-5 py-14 md:grid-cols-[280px_1fr] md:px-10 md:py-24">
+          <div className="relative mx-auto aspect-[2/3] w-44 overflow-hidden rounded-lg bg-zinc-900 shadow-2xl shadow-black/40 md:mx-0 md:w-auto">
             <Image src={tmdbImage(details.posterPath, "w500")} alt={details.title} fill sizes="280px" className="object-cover" />
           </div>
-          <div className="max-w-4xl self-end pb-4">
+          <div className="max-w-4xl pb-4 md:self-end">
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-rose-400">{details.mediaType === "movie" ? "Movie" : "TV Show"}</p>
             <h1 className="mt-3 text-5xl font-black text-white md:text-7xl">{details.title}</h1>
             <p className="mt-4 text-sm text-slate-300">
@@ -55,14 +81,36 @@ export default async function DetailsPage({ params }: { params: Promise<{ type: 
             </div>
             {details.mediaType === "tv" && (
               <div className="mt-8">
-                <h2 className="text-lg font-bold">Episodes</h2>
+                <h2 className="text-lg font-bold">Seasons & Episodes</h2>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {Array.from({ length: Math.min(details.seasons?.find((season) => season.seasonNumber === 1)?.episodeCount ?? 8, 12) }).map((_, index) => (
-                    <Link key={index} href={`/watch/tv/${details.tmdbId}?season=1&episode=${index + 1}`} className="rounded-md bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20">
-                      E{index + 1}
-                    </Link>
-                  ))}
+                  {seasons.map((season) => {
+                    const active = season.seasonNumber === selectedSeason?.seasonNumber;
+                    return (
+                      <Link
+                        key={season.seasonNumber}
+                        href={`/media/tv/${details.tmdbId}?season=${season.seasonNumber}`}
+                        className={`rounded-md px-4 py-2 text-sm font-semibold transition ${
+                          active ? "bg-white text-black" : "bg-white/10 text-white hover:bg-white/20"
+                        }`}
+                      >
+                        {season.name || `Season ${season.seasonNumber}`}
+                      </Link>
+                    );
+                  })}
                 </div>
+                {selectedSeason && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {Array.from({ length: selectedSeason.episodeCount }).map((_, index) => (
+                      <Link
+                        key={index}
+                        href={`/watch/tv/${details.tmdbId}?season=${selectedSeason.seasonNumber}&episode=${index + 1}`}
+                        className="rounded-md bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20"
+                      >
+                        E{index + 1}
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
