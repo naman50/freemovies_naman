@@ -19,21 +19,29 @@ export function SearchExperience() {
   }, []);
 
   useEffect(() => {
+    const normalizedQuery = query.trim();
+    const controller = new AbortController();
     const handle = window.setTimeout(async () => {
-      if (!query.trim()) {
+      if (normalizedQuery.length < 2) {
         setResults([]);
+        setLoading(false);
         return;
       }
       setLoading(true);
       try {
-        const response = await axios.get("/api/tmdb/search", { params: { q: query } });
+        const response = await axios.get("/api/tmdb/search", { params: { q: normalizedQuery }, signal: controller.signal });
         setResults(response.data.results);
+      } catch (error) {
+        if (!axios.isCancel(error)) setResults([]);
       } finally {
         setLoading(false);
       }
-    }, 250);
+    }, 400);
 
-    return () => window.clearTimeout(handle);
+    return () => {
+      controller.abort();
+      window.clearTimeout(handle);
+    };
   }, [query]);
 
   const filtered = useMemo(() => {

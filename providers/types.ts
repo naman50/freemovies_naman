@@ -7,6 +7,7 @@ export type StreamRequest = {
   mediaType: MediaType;
   season?: number;
   episode?: number;
+  language?: string | null;
 };
 
 export type StreamSource = {
